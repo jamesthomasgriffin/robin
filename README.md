@@ -1,2 +1,11 @@
-# robin
-A text rendering algorithm
+# Raster of Bezier Intersection Neighbourhoods (ROBIN)
+
+An algorithm for rendering text or other vector graphics, inspired by and directly comparable to [SLUG](https://github.com/EricLengyel/Slug), in fact it is nearly equivalent if the raster is a `1xn` line.  The input is a sequence of quadratic Bezier curves, these curves are binned into a raster, each texel references the curves which pass through it and contains a partial calculation of the winding number for the curves which do *not* pass through it.  This means that only those curves in the neighbourhood of a point need to be intersected when computing the winding number.
+
+Although I don't make any strong claims of speed I found this method to be about `1.5x` to `2x` as fast as SLUG which bins its curves into bands, this is for simple fonts with double digit numbers of curves.  The main advantage of ROBIN is that it scales with the number of curves in a texel neighbourhood as opposed to the number of curves that intersect a line passing through the whole glyph.  As such ROBIN sees no slow down for intricate fonts at the expense of a larger raster.  Because ROBIN is inherently more efficient than SLUG this also means that the implementation requires fewer optimisations meaning that it is actually simpler.
+
+The memory use is harder to compare as it depends on the parameters chosen.  However even though a whole 2D raster is used, this offers the benefit that for most texels the curves are a contiguous subset of the full set of curves, meaning that most texels can reference a single unique copy of the data.  A larger raster leads to *less* floating point curve memory use!  It is certainly feasible to have the maximum of 65,536 symbols of a typical font file held in a single 2048 or 4096 square raster with a buffer of floats of a similar size for the curve data.  Though you may prefer to load the symbols in as they are needed.
+
+## This implementation
+
+This repository contains a [LÖVR](https://github.com/bjornbytes/lovr) project.  The code is split between glsl for rendering and Lua for the creation of the ROBIN raster and curve data.  At this stage the code is not pretty, but hopefully the text rendering is.  Suggestions for improvements are welcome.

@@ -1,4 +1,4 @@
---- Raster of Bezier Intersection Neighbourhoods (ROBIN)
+--- Raster of Bezier Intersection NeighbourHeightoods (ROBIN)
 -- @module robin
 -- @author James Griffin
 -- @license MIT
@@ -7,8 +7,8 @@ local pixelShaderPath = "robin-pixel.glsl"
 local vertexShaderPath = "robin-vertex.glsl"
 
 
--- s is an array of 6 floats defining a quadratic Bezier segment
--- returns xMin, xMax, yMin, yMax
+-- @param s an array of 6 floats defining a quadratic Bezier segment
+-- @return floats xMin, xMax, yMin, yMax
 local function segmentBounds(s)
   return math.min(s[1], s[3], s[5]), math.max(s[1], s[3], s[5]),
     math.min(s[2], s[4], s[6]), math.max(s[2], s[4], s[6])
@@ -23,11 +23,11 @@ local function expandBounds(b, xMin, xMax, yMin, yMax)
 end
 
 --- Interprets a more general curve solely in terms of quadratic Beziers.
--- @param A curve of lines, quadratic and cubic Beziers defined by arrays of
+-- @param curve a list of lines, quadratic and cubic Beziers defined by arrays of
 -- 4, 6 and 8 numbers respectively.
--- @param A function that takes a quadratic segment and transforms it in place,
+-- @param f a function that takes a quadratic segment and transforms it in place,
 -- nil is interpreted as a trivial function that does nothing.
--- @return A generating function representing a view of the curve with only 
+-- @return generating function representing a view of the curve with only 
 -- quadratic Bezier segments.  For each jump between components of the curve
 -- an extra segment is added. The generating function returns index, segment, 
 -- shouldSkip, the third value indicates that the segment is a jump.
@@ -66,9 +66,9 @@ local function wrangledVersion(curve, f)
         end      
       elseif #segment == 8 then
         local s = segment
-        local function f(i, j, t) return s[i] * (1 - t) + s[j] * t end
-        local ax, ay = f(1,3,0.75), f(2,4,0.75)
-        local bx, by = f(5,7,0.25), f(6,8,0.25)
+        local function l(i, j, t) return s[i] * (1 - t) + s[j] * t end
+        local ax, ay = l(1,3,0.75), l(2,4,0.75)
+        local bx, by = l(5,7,0.25), l(6,8,0.25)
         local cx, cy = (ax + bx)/2, (ay + by) / 2
         outSegment[1], outSegment[2] = s[1], s[2]
         outSegment[3], outSegment[4] = ax, ay
@@ -103,20 +103,11 @@ function BernsteinQuadratic:eval(t)
   return a * u + b * t
 end
 
--- Not used
---function BernsteinQuadratic:deriv(t)
---  -- 2u p1 + 2(u - t) p2 + 2t p3 
---  -- = 2u(p2 - p1) + 2t(p3 - p2)
---  -- = 2(p2 - p1) + 2t(p1 - 2 p2 + p3)
---  local u = 1 - t
---  return 2 * u * (self[2] - self[1]) + 2 * t * (self[3] - self[2])
---end
-
 function BernsteinQuadratic:stationaryPoint()
   --(p1 - 2p2 + p3) t - (p1 - p2) = 0
   local q = self[1] - 2*self[2] + self[3]
   local p = self[1] - self[2]
-  if math.abs(q) < 1e-9 then
+  if math.abs(q) > 1e-9 then
     return p / q
   end
 end
@@ -152,10 +143,10 @@ function BernsteinQuadratic:integerIntersections()
   local function roots(n)
     if math.abs(A) < EPSILON then -- solve Bt + C = n
       if math.abs(B) < EPSILON then
-        return 0, 0
+        return
       end
       local t = (n - C) / B
-      return t, t
+      return t, t -- this is not a double root, exactly one of these will be used
     end
     local D = B * B - 4 * A * (C - n)
     local sqrtD = math.sqrt(math.max(D, 0))
@@ -163,26 +154,26 @@ function BernsteinQuadratic:integerIntersections()
   end  
   
   local function range()
-    local y_min, y_max = math.min(p1, p3), math.max(p1, p3)
+    local yMin, yMax = math.min(p1, p3), math.max(p1, p3)
     if math.abs(A) > EPSILON then
-      local t_ext = -B / (2*A)
-      if t_ext > 0 and t_ext < 1 then
-        local y_ext = self:eval(t_ext)
-        y_min = math.min(y_min, y_ext)
-        y_max = math.max(y_max, y_ext)
+      local tStat = -B / (2*A)
+      if tStat > 0 and tStat < 1 then
+        local yStat = self:eval(tStat)
+        yMin = math.min(yMin, yStat)
+        yMax = math.max(yMax, yStat)
       end
     end
-    return y_min, y_max
+    return yMin, yMax
   end
   
-  local y_min, y_max = range()
+  local yMin, yMax = range()
   
-  local n_lo = math.ceil(y_min)
-  local n_hi = math.floor(y_max)
+  local nLow = math.ceil(yMin)
+  local nHigh = math.floor(yMax)
 
   local results = {}
 
-  for n = n_lo, n_hi do
+  for n = nLow, nHigh do
     local t1, t2 = roots(n)
     local c1, c2 = rootTypes(n)
     
@@ -257,7 +248,10 @@ local function getPixelIntersections(curve, numColumns, numRows, transform)
         end
         local m, M = math.floor(xMin), math.floor(xMax)        
         for n = math.max(m, 0), math.min(M, #row-1) do
-          table.insert(row[n+1], index)
+          local pixel = row[n+1]
+          if pixel[#pixel] ~= index then
+            table.insert(pixel, index)
+          end
         end
       end
       
@@ -296,6 +290,10 @@ local function getPixelIntersections(curve, numColumns, numRows, transform)
   return res  
 end
 
+--- tests whether a sorted list contains all integers between its minimum and
+-- maximum values
+-- @param t a sorted list
+-- @return boolean
 local function isContiguous(t)
   for i = 2, #t do
     local diff = t[i] - t[i-1]
@@ -306,6 +304,12 @@ local function isContiguous(t)
   return true
 end
 
+local BYTES_PER_FLOAT = 4
+local FLOATS_PER_SEGMENT = 4 -- not 6 as end of one segment is the start of the next
+local FLOATS_PER_FULL_SEGMENT = 6
+local BYTES_PER_SEGMENT = BYTES_PER_FLOAT * FLOATS_PER_SEGMENT
+local BYTES_PER_FULL_SEGMENT = BYTES_PER_FLOAT * FLOATS_PER_FULL_SEGMENT
+  
 local function copyCurveToBlob(curve, buffer, f)
 
   local curveStart = {curve[1][1], curve[1][2]}
@@ -315,14 +319,15 @@ local function copyCurveToBlob(curve, buffer, f)
     if shouldSkip then
       curveStart[1], curveStart[2] = seg[5], seg[6]
     end
-    buffer:setF32(4 * 4 * segmentCount, seg[1], seg[2], seg[3], seg[4])
+    buffer:setF32(BYTES_PER_SEGMENT * segmentCount, seg[1], seg[2], seg[3], seg[4])
     segmentCount = segmentCount + 1
   end
   
   -- This extra data provides the endpoint of the final segment
-  buffer:setF32(4 * 4 * segmentCount, curveStart[1], curveStart[2], 0, 0)
+  buffer:setF32(BYTES_PER_SEGMENT * segmentCount, curveStart[1], curveStart[2], 0, 0)
+  segmentCount = segmentCount + 1
   
-  return segmentCount + 1
+  return segmentCount
 end
 
 local function composeTransform(a, b)
@@ -344,7 +349,7 @@ end
 --
 -- @return table of properties required for rendering:
 -- TODO describe these properties
-function prepareCurve(curve, raster, buffer, bounds)
+local function prepareCurve(curve, raster, buffer, bounds)
   if #curve == 0 then error("Curve must not be empty") end
   
   if not bounds then  
@@ -375,9 +380,10 @@ function prepareCurve(curve, raster, buffer, bounds)
   
   local nonContiguousSegmentCount = 0
   local function pushbackSegment(ix)
+    local offset = BYTES_PER_SEGMENT * segmentCount + BYTES_PER_FULL_SEGMENT * nonContiguousSegmentCount
     for i = 0, 5 do
-      buffer:setF32(16 * segmentCount + 24 * nonContiguousSegmentCount + 4 * i,
-        buffer:getF32(16 * (ix - 1) + 4 * i) )
+      local v = buffer:getF32(BYTES_PER_SEGMENT * (ix - 1) + BYTES_PER_FLOAT * i)
+      buffer:setF32(offset + BYTES_PER_FLOAT * i, v)
     end
     nonContiguousSegmentCount = nonContiguousSegmentCount + 1
   end
@@ -390,16 +396,25 @@ function prepareCurve(curve, raster, buffer, bounds)
       if #pix == 0 then
         startIndex = 0
       elseif isContiguous(pix) then
-        startIndex = 4 * (pix[1]-1)
+        startIndex = FLOATS_PER_SEGMENT * (pix[1]-1)
       else
         nonContiguousPixelCount = nonContiguousPixelCount + 1
-        startIndex = 6 * nonContiguousSegmentCount + 4 * segmentCount + 1  -- the 1 encodes the non-contiguity
-        for _, value in ipairs(pix) do
+        startIndex = FLOATS_PER_FULL_SEGMENT * nonContiguousSegmentCount + 
+          FLOATS_PER_SEGMENT * segmentCount + 1  -- the 1 encodes the non-contiguity
+        for index, value in ipairs(pix) do
+          if index == 256 then break end -- maximum of 255 curves per pixel
           pushbackSegment(value)
         end
       end
-      local combinedData = (pix.windingNo + 128) * 256 + #pix
-      raster:setPixel(x-1, y-1, combinedData/65535.0, startIndex/65535.0)
+      
+      local clampAsUByte = function(n) return math.max(math.min(n, 255), 0) end
+      
+      local nCurves = clampAsUByte(#pix)
+      local windingNoAsUByte = clampAsUByte(pix.windingNo + 128)
+      local combinedData = windingNoAsUByte * 256 + nCurves
+      
+      local maxU16 = 65535
+      raster:setPixel(x-1, y-1, combinedData/maxU16, startIndex/maxU16)
     end
   end
       
@@ -409,7 +424,7 @@ function prepareCurve(curve, raster, buffer, bounds)
     segmentCount = segmentCount,
     nonContiguousPixelCount = nonContiguousPixelCount,
     nonContiguousSegmentCount = nonContiguousSegmentCount,
-    floatCount = 4 * segmentCount + 6 * nonContiguousSegmentCount
+    floatCount = FLOATS_PER_SEGMENT * segmentCount + FLOATS_PER_FULL_SEGMENT * nonContiguousSegmentCount
     }
 end
 
@@ -433,8 +448,8 @@ function robin.new(o)
   o.curveBufferUsed = 0
   o.segmentCount = 0
   o.nonContiguousSegmentCount = 0
-  local segmentCapacity = 1000000
-  o.curveBuffer = lovr.graphics.newBuffer('f32', segmentCapacity)
+  local initialCapacity = 20000  -- should hold a small-medium font
+  o.curveBuffer = lovr.graphics.newBuffer('f32', initialCapacity)
   o.rasterBuffer = lovr.graphics.newTexture(o.rasterWidth, o.rasterHeight, {
     type = '2d',
     format = 'rg16',
@@ -455,16 +470,26 @@ function robin:add(curve, bounds)
   self.raster = self.raster or lovr.data.newImage(self.entryWidth, self.entryHeight, 'rg16')
   self.buffer = self.buffer or lovr.data.newBlob(1000000)
   
+  
   local result = prepareCurve(curve, self.raster, self.buffer, bounds)
-  result.dataOffset = self.curveBufferUsed
+  result.dataOffset = self.curveBufferUsed / 2
   result.uvToTexture = {
     self.entryWidth / self.rasterWidth, 
     self.entryHeight / self.rasterHeight, 
     x * self.entryWidth / self.rasterWidth,
     y * self.entryHeight / self.rasterHeight
-    }    
+    }   
+
+  local requiredBufferSize = BYTES_PER_FLOAT * (self.curveBufferUsed + result.floatCount)
+  local currentBufferSize = self.curveBuffer:getSize()
+  if currentBufferSize < requiredBufferSize then
+    local newSize = math.max(currentBufferSize * 2, requiredBufferSize)
+    local newBuffer = lovr.graphics.newBuffer('f32', newSize / BYTES_PER_FLOAT)
+    newBuffer:setData(self.curveBuffer)
+    self.curveBuffer = newBuffer
+  end
   
-  self.curveBuffer:setData(self.buffer, 4 * self.curveBufferUsed)
+  self.curveBuffer:setData(self.buffer, BYTES_PER_FLOAT * self.curveBufferUsed)
     
   self.rasterBuffer:setPixels(self.raster, x * self.entryWidth, y * self.entryHeight)
   
@@ -476,6 +501,23 @@ function robin:add(curve, bounds)
   self.segmentCount = self.segmentCount + result.segmentCount
   
   return result
+end
+
+function robin.necessaryDimensions(entryWidth, entryHeight, capacity)
+  local rWidth, rHeight = entryWidth, entryHeight
+  while rWidth / entryWidth * rHeight / entryHeight < capacity do
+    if rWidth <= rHeight then 
+      rWidth = rWidth * 2 
+    else
+      rHeight = rHeight * 2
+    end
+  end
+  return rWidth, rHeight
+end
+
+function robin:sendBuffers(pass)
+  pass:send('rasterData', self.rasterBuffer)
+  pass:send('CurveData', self.curveBuffer)
 end
 
 function robin:getRasterMemoryUse()

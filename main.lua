@@ -9,8 +9,8 @@ local sampleEnglish = [[Everyone has the right to freedom of thought, conscience
 Everyone has the right to freedom of opinion and expression; this right includes freedom to hold opinions without interference and to seek, receive and impart information and ideas through any media and regardless of frontiers.
 Everyone has the right to rest and leisure, including reasonable limitation of working hours and periodic holidays with pay.]]
 
-local function is_whitespace(cp)
-  local whitespace_lookup = {
+local function isWhitespace(cp)
+  local lookup = {
       -- ASCII whitespace
       [9]   = true, -- Horizontal Tab (\t)
       [10]  = true, -- Line Feed (\n)
@@ -39,12 +39,11 @@ local function is_whitespace(cp)
       [0x205F] = true, -- Medium mathematical space
       [0x3000] = true, -- Ideographic (CJK) space
   }
-
-  return whitespace_lookup[cp] or false
+  return lookup[cp] or false
 end
 
-local function is_newline(cp)
-  local newline_lookup = {
+local function isNewline(cp)
+  local lookup = {
       -- ASCII whitespace
       [10]  = true, -- Line Feed (\n)
       [11]  = true, -- Vertical Tab (\v)
@@ -55,11 +54,10 @@ local function is_newline(cp)
       [0x2028] = true, -- Line separator
       [0x2029] = true, -- Paragraph separator
   }
-
-  return newline_lookup[cp] or false
+  return lookup[cp] or false
 end
 
--- This is a very rough proof of concept
+-- A very rough proof of concept
 local RobinText = {}
 RobinText.__index = RobinText
 
@@ -70,16 +68,18 @@ function RobinText.new(fontPath, entryWidth, entryHeight)
   entryWidth = entryWidth or 16
   entryHeight = entryHeight or 16
   
+  
   local o = setmetatable({}, RobinText)
   o.rasterizer = lovr.data.newRasterizer(fontPath)
-  o.robinBuffer = robin.new({entryWidth = entryWidth, entryHeight = entryHeight})
+  
+  local rasterW, rasterH = robin.necessaryDimensions(entryWidth, entryHeight, o.rasterizer:getGlyphCount())
+  
+  o.robinBuffer = robin.new({
+    entryWidth = entryWidth, entryHeight = entryHeight,
+    rasterWidth = rasterW, rasterHeight = rasterH})
   o.characters = { count = 0 }
   
-  if o.rasterizer:hasGlyphs(0x4E00) then
-    o.sample = sampleChinese
-  else
-    o.sample = sampleEnglish
-  end
+  o.sample = o.rasterizer:hasGlyphs(0x4E00) and sampleChinese or sampleEnglish
 
   return o
 end
@@ -98,6 +98,7 @@ function RobinText:addCharacter(codepoint)
   
   entry.bounds = {hm, vm, hM, vM}
   entry.advance = self.rasterizer:getAdvance(codepoint)
+  
   self.characters[codepoint] = entry
   
 end
@@ -109,8 +110,7 @@ function RobinText:draw(pass, text, wrap)
   pass:setShader(robin.shader)
   pass:setBlendMode('alpha')
   pass:setDepthTest('none')
-  pass:send('rasterData', self.robinBuffer.rasterBuffer)
-  pass:send('CurveData', self.robinBuffer.curveBuffer)
+  self.robinBuffer:sendBuffers(pass)
   
   local advance = 0
   local lineNumber = 0
@@ -125,22 +125,22 @@ function RobinText:draw(pass, text, wrap)
       if not entry.skip then
         pass:send('uvToCurve', unpack(entry.uvToCurve))
         pass:send('uvToTexture', unpack(entry.uvToTexture))
-        pass:send('glyphDataOffset', entry.dataOffset / 2)
+        pass:send('glyphDataOffset', entry.dataOffset)
       end
       
       local x, y, X, Y = unpack(entry.bounds)
       if lastCodepoint then
         advance = advance + self.rasterizer:getKerning(lastCodepoint, codepoint)
       end      
-      if is_newline(codepoint) or (wrap and advance + entry.advance > wrap) then
+      if isNewline(codepoint) or (wrap and advance + entry.advance > wrap) then
         advance = 0
         lineNumber = lineNumber + 1
-      else
-        if not is_whitespace(codepoint) then
-          pass:plane(advance + (x+X)/2, lineNumber * leading + (y+Y)/2, 0, X - x, y - Y)
-        end
-        advance = advance + entry.advance
       end
+      if not isWhitespace(codepoint) then
+        pass:plane(advance + (x+X)/2, lineNumber * leading + (y+Y)/2, 0, X - x, y - Y)
+      end
+      advance = advance + entry.advance
+      
       lastCodepoint = codepoint
     end
   end
@@ -162,7 +162,7 @@ function lovr.draw(pass)
   
   local stats = pass:getStats()
   local text = {
-    "Press number keys to select font from fonts/ folder",
+    "Press number keys to select font from fonts folder",
     "Use (shift) +/- to change entry dimensions",
     string.format("%.2fms", stats.gpuTime * 1000),
     string.format("Draws: %d", stats.draws),

@@ -1,4 +1,4 @@
-// Raster Of Bezier Intersection Neighbourhoods (ROBIN)
+// Raster Of Bézier Intersection Neighbourhoods (ROBIN)
 
 
 /******* Uniforms and input data *******/
@@ -8,14 +8,14 @@ flat in vec4 textureToCurve;
 
 // Transforms
 uniform vec4 uvToTexture;   // transform to the indexing texture 
-uniform vec4 uvToCurve;     // transform to the coord. system of the Beziers
+uniform vec4 uvToCurve;     // transform to the coord. system of the Béziers
 
 vec2 applyTransform(vec4 T, vec2 p) { return p * T.xy + T.zw; }
 vec2 applyInverseTransform(vec4 T, vec2 p) { return (p - T.zw) / T.xy; }
 vec4 composeTransform(vec4 T, vec4 U) { return vec4(T.xy * U.xy, T.xy * U.zw + T.zw); }
 vec4 invertTransform(vec4 T) { return vec4(vec2(1.0) / T.xy, -T.zw / T.xy); }
 
-// The Beziers are triples of vec2's within this buffer
+// The Béziers are triples of vec2's within this buffer
 readonly buffer CurveData {
     vec2[] curveData;
 };
@@ -24,8 +24,8 @@ readonly buffer CurveData {
 uniform int glyphDataOffset;
 
 // Each texel contains a partial computation of the winding number,
-// the number of Beziers and the index of the initial Bezier, see the
-// code for the encoding.  One bit encodes whether the Beziers are contiguous
+// the number of Béziers and the index of the initial Bézier, see the
+// code for the encoding.  One bit encodes whether the Béziers are contiguous
 // or not (which determines the stride).
 uniform sampler2D rasterData;
 
@@ -67,7 +67,7 @@ QuadraticRoots solveQuadratic(float a, float b, float c)
 }
 
 
-/******* Crossing number of a quadratic Bezier *******/
+/******* Crossing number of a quadratic Bézier *******/
 
 // This can be moved into the calling function, but care is needed, the a==b
 // case is very important to get correct.
@@ -82,9 +82,9 @@ float closestProximity(float a, float b) {
 
 // Computes the number of times (with parity) a piecewise linear path
 //   (-inf, lineY) --> (q.x, lineY) --> (q.x, q.y)
-// crosses the quadratic Bezier curve defined by control points p1, p2, p3
+// crosses the quadratic Bézier curve defined by control points p1, p2, p3
 // returns a vec3 containing the total, and two "proximity" values representing
-// the distance from q to the Bezier in the x and y directions along with the 
+// the distance from q to the Bézier in the x and y directions along with the 
 // sign of the crossing number change at the closest points.
 vec3 crossingNumberOfBezier(vec2 p1, vec2 p2, vec2 p3, float lineY, vec2 q)
 {
@@ -96,10 +96,9 @@ vec3 crossingNumberOfBezier(vec2 p1, vec2 p2, vec2 p3, float lineY, vec2 q)
     const vec2 b = 2 * (p2 - p1);
     const vec2 c = p1;
     
-    // 1(q.x > p1.x) * (1(p3.y > lineY) - 1(p1.y > lineY)) + 
-    // 1(p3.y > lineY) * (1(p3.x > q.x) - 1(p1.x > q.x))
-    change -= my_step(q.x, p1.x) * (my_step(lineY, p3.y) - my_step(lineY, p1.y));
-    change -= my_step(lineY, p3.y) * (my_step(q.x, p3.x) - my_step(q.x, p1.x));
+    // 1(q.x > p1.x) * 1(p1.y > lineY) - 1(q.x > p3.x) * 1(lineY > p3.y)
+    change += my_step(q.x, p1.x) * my_step(lineY, p1.y);
+    change -= my_step(q.x, p3.x) * my_step(lineY, p3.y);
     
     const uint vCode = rootEligibility(p1.x, p2.x, p3.x, q.x);
     if (vCode != 0U)

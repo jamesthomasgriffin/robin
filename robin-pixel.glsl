@@ -98,8 +98,8 @@ vec3 crossingNumberOfBezier(vec2 p1, vec2 p2, vec2 p3, float lineY, vec2 q)
     
     // 1(q.x > p1.x) * (1(p3.y > lineY) - 1(p1.y > lineY)) + 
     // 1(p3.y > lineY) * (1(p3.x > q.x) - 1(p1.x > q.x))
-    change += my_step(q.x, p1.x) * (my_step(lineY, p3.y) - my_step(lineY, p1.y));
-    change += my_step(lineY, p3.y) * (my_step(q.x, p3.x) - my_step(q.x, p1.x));
+    change -= my_step(q.x, p1.x) * (my_step(lineY, p3.y) - my_step(lineY, p1.y));
+    change -= my_step(lineY, p3.y) * (my_step(q.x, p3.x) - my_step(q.x, p1.x));
     
     const uint vCode = rootEligibility(p1.x, p2.x, p3.x, q.x);
     if (vCode != 0U)
@@ -109,14 +109,16 @@ vec3 crossingNumberOfBezier(vec2 p1, vec2 p2, vec2 p3, float lineY, vec2 q)
         
 		if ((vCode & 1U) != 0U)
 		{
-			change -= my_step(q.y, y.r);
-            if (!res.doubleRoot) proximityY = closestProximity(proximityY, -(q.y - y.r));
+			change += my_step(q.y, y.r);
+            if (!res.doubleRoot) 
+                proximityY = closestProximity(proximityY, q.y - y.r);
 		}
 
 		if (vCode > 1U)
 		{
-			change += my_step(q.y, y.g);
-            if (!res.doubleRoot) proximityY = closestProximity(proximityY, q.y - y.g);
+			change -= my_step(q.y, y.g);
+            if (!res.doubleRoot) 
+                proximityY = closestProximity(proximityY, -(q.y - y.g));
 		}
     }    
     
@@ -129,12 +131,12 @@ vec3 crossingNumberOfBezier(vec2 p1, vec2 p2, vec2 p3, float lineY, vec2 q)
             const vec2 x = evaluateQuadratic(a.x, b.x, c.x, res.roots);
             if ((hCode & 1U) != 0U)
             {
-                proximityX = closestProximity(proximityX, -(q.x - x.r));
+                proximityX = closestProximity(proximityX, q.x - x.r);
             }
 
             if (hCode > 1U)
             {
-                proximityX = closestProximity(proximityX, q.x - x.g);
+                proximityX = closestProximity(proximityX, -(q.x - x.g));
             }
         }
     }    
@@ -145,36 +147,34 @@ vec4 debugColour = vec4(0);
 
 float robinRender(vec2 uv)
 {
-    vec2 texCoord = applyTransform(uvToTexture, clamp(uv, vec2(0,0), vec2(0.999, 0.999)));    
+    const vec2 texCoord = applyTransform(uvToTexture, clamp(uv, vec2(0,0), vec2(0.999, 0.999)));    
 
-    ivec2 gridCoord = ivec2(textureSize(rasterData, 0) * texCoord);
-    uvec2 gridData = uvec2(round(texelFetch(rasterData, gridCoord, 0).rg * 65535.0));
+    const ivec2 gridCoord = ivec2(textureSize(rasterData, 0) * texCoord);
+    const uvec2 gridData = uvec2(round(texelFetch(rasterData, gridCoord, 0).rg * 65535.0));
     
-    vec2 anchorPosition = applyTransform(textureToCurve, 
+    const vec2 anchorPosition = applyTransform(textureToCurve, 
             vec2(gridCoord) / textureSize(rasterData, 0));
             
-    int partialWindingNumber = int(gridData.r >> 8) - 128;
+    const int partialWindingNumber = int(gridData.r >> 8) - 128;
     
-    int numSegments = int(gridData.r & 255);
+    const int numSegments = int(gridData.r & 255);
     
-    int startingIndex = glyphDataOffset + int(gridData.g >> 1);
-    int indexStride = ((gridData.g & 1u) == 1u) ? 3 : 2;
+    const int startingIndex = glyphDataOffset + int(gridData.g >> 1);
+    const int indexStride = ((gridData.g & 1u) == 1u) ? 3 : 2;
     
-    // The sign convention is switched between the pixel shader and the CPU code
-    // TODO, change this shader
-	float windingNumber = -partialWindingNumber;
+	float windingNumber = partialWindingNumber;
         
     float proximityX = 1.0e30;
     float proximityY = 1.0e30;
 	for (int i = 0; i < numSegments; i++)
 	{
-		int curveIndex = startingIndex + indexStride * i;
+		const int curveIndex = startingIndex + indexStride * i;
         
-		vec2 p1 = curveData[curveIndex + 0];
-		vec2 p2 = curveData[curveIndex + 1];
-		vec2 p3 = curveData[curveIndex + 2];
+		const vec2 p1 = curveData[curveIndex + 0];
+		const vec2 p2 = curveData[curveIndex + 1];
+		const vec2 p3 = curveData[curveIndex + 2];
         
-        vec3 cnb = crossingNumberOfBezier(p1, p2, p3, anchorPosition.y, curveCoord);
+        const vec3 cnb = crossingNumberOfBezier(p1, p2, p3, anchorPosition.y, curveCoord);
         
         windingNumber += cnb.x;
         proximityX = closestProximity(proximityX, cnb.y);
@@ -182,9 +182,9 @@ float robinRender(vec2 uv)
 	}
     
     // Turns the winding number of "proximities" into an anti-aliased value
-	vec2 emsPerPixel = fwidth(curveCoord);
-	vec2 pixelsPerEm = 1.2 / emsPerPixel;
-    float proximity = closestProximity(proximityX * pixelsPerEm.x, -proximityY * pixelsPerEm.y);
+	const vec2 emsPerPixel = fwidth(curveCoord);
+	const vec2 pixelsPerEm = 1.2 / emsPerPixel;
+    const float proximity = closestProximity(proximityX * pixelsPerEm.x, -proximityY * pixelsPerEm.y);
     if (windingNumber==0) 
         return max(0.5 - 0.5 * abs(proximity), 0.0);
     else if (windingNumber == 1)

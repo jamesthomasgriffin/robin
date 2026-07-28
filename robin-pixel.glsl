@@ -1,27 +1,23 @@
 // Raster Of Bézier Intersection Neighbourhoods (ROBIN)
 
 
-/******* Uniforms and input data *******/
+/******* Input data *******/
 
-in vec2 curveCoord;
-flat in vec4 textureToCurve;
-
-// Transforms
-uniform vec4 uvToTexture;   // transform to the indexing texture 
-uniform vec4 uvToCurve;     // transform to the coord. system of the Béziers
+struct RobinPerGlyph {
+    vec4 uvToCurve;
+    vec4 uvToTexture;
+    vec4 textureToCurve;
+    int dataOffset;
+};
+flat in RobinPerGlyph glyph;
 
 vec2 applyTransform(vec4 T, vec2 p) { return p * T.xy + T.zw; }
 vec2 applyInverseTransform(vec4 T, vec2 p) { return (p - T.zw) / T.xy; }
-vec4 composeTransform(vec4 T, vec4 U) { return vec4(T.xy * U.xy, T.xy * U.zw + T.zw); }
-vec4 invertTransform(vec4 T) { return vec4(vec2(1.0) / T.xy, -T.zw / T.xy); }
 
 // The Béziers are triples of vec2's within this buffer
 readonly buffer CurveData {
     vec2[] curveData;
 };
-
-// Start of data in CurveData
-uniform int glyphDataOffset;
 
 // Each texel contains a partial computation of the winding number,
 // the number of Béziers and the index of the initial Bézier, see the
@@ -142,27 +138,28 @@ vec3 crossingNumberOfBezier(vec2 p1, vec2 p2, vec2 p3, float lineY, vec2 q)
     return vec3(change, proximityX, proximityY);
 }
 
-vec4 debugColour = vec4(0);
-
-float robinRender(vec2 uv)
-{
-    const vec2 texCoord = applyTransform(uvToTexture, clamp(uv, vec2(0,0), vec2(0.999, 0.999)));    
-
-    const ivec2 gridCoord = ivec2(textureSize(rasterData, 0) * texCoord);
-    const uvec2 gridData = uvec2(round(texelFetch(rasterData, gridCoord, 0).rg * 65535.0));
+float robinRender(RobinPerGlyph g, vec2 uv)
+{  
+    const vec2 curveCoord = applyTransform(g.uvToCurve, uv);
     
-    const vec2 anchorPosition = applyTransform(textureToCurve, 
+    // NB, these calculations need to be in the pixel shader,
+    // the interpolation leads to artifacts otherwise
+    const vec2 clampedUV = clamp(uv, vec2(0), vec2(0.999));
+    const vec2 tex = applyTransform(g.uvToTexture, clampedUV);
+    
+    const ivec2 gridCoord = ivec2(textureSize(rasterData, 0) * tex);    
+    const vec2 cornerOfSquare = applyTransform(g.textureToCurve, 
             vec2(gridCoord) / textureSize(rasterData, 0));
             
-    const int partialWindingNumber = int(gridData.r >> 8) - 128;
+    const uvec2 gridData = uvec2(round(texelFetch(rasterData, gridCoord, 0).rg * 65535.0));
     
+    const int partialWindingNumber = int(gridData.r >> 8) - 128;  
     const int numSegments = int(gridData.r & 255);
     
-    const int startingIndex = glyphDataOffset + int(gridData.g >> 1);
+    const int startingIndex = g.dataOffset + int(gridData.g >> 1);
     const int indexStride = ((gridData.g & 1u) == 1u) ? 3 : 2;
     
-	float windingNumber = partialWindingNumber;
-        
+	float windingNumber = partialWindingNumber;        
     float proximityX = 1.0e30;
     float proximityY = 1.0e30;
 	for (int i = 0; i < numSegments; i++)
@@ -173,7 +170,7 @@ float robinRender(vec2 uv)
 		const vec2 p2 = curveData[curveIndex + 1];
 		const vec2 p3 = curveData[curveIndex + 2];
         
-        const vec3 cnb = crossingNumberOfBezier(p1, p2, p3, anchorPosition.y, curveCoord);
+        const vec3 cnb = crossingNumberOfBezier(p1, p2, p3, cornerOfSquare.y, curveCoord);
         
         windingNumber += cnb.x;
         proximityX = closestProximity(proximityX, cnb.y);
@@ -195,6 +192,5 @@ float robinRender(vec2 uv)
 
 vec4 lovrmain()
 {
-	vec4 res = vec4(Color.rgb, robinRender(UV) * Color.a); 
-    return mix(res, debugColour, debugColour.a);
+	return vec4(Color.rgb, robinRender(glyph, UV) * Color.a); 
 }

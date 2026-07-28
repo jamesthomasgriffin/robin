@@ -63,7 +63,7 @@ RobinText.__index = RobinText
 
 function RobinText.new(fontPath, entryWidth, entryHeight)
   if not robin.shader then
-    robin.loadShader()
+    print(robin.loadShader())
   end
   entryWidth = entryWidth or 16
   entryHeight = entryHeight or 16
@@ -81,6 +81,18 @@ function RobinText.new(fontPath, entryWidth, entryHeight)
   
   o.sample = o.rasterizer:hasGlyphs(0x4E00) and sampleChinese or sampleEnglish
 
+  o.instanceBuffer = robin.InstanceBuffer.new()
+  o.mesh = lovr.graphics.newMesh({
+    { 'VertexPosition', 'vec3' },
+    { 'VertexUV', 'vec2' }
+  }, {
+    { 0, 1, 0, 0, 1 },
+    { 1, 1, 0, 1, 1 },
+    { 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0 },
+    { 1, 1, 0, 1, 1 },
+    { 1, 0, 0, 1, 0 }
+  })
   return o
 end
 
@@ -104,16 +116,12 @@ end
 
 function RobinText:draw(pass, text, wrap)
 
-  if not robin.shader then return end
-  
-  pass:setShader(robin.shader)
-  pass:setBlendMode('alpha')
-  pass:setDepthTest('none')
-  self.robinBuffer:sendBuffers(pass)
+  local instanceOffset = self.instanceBuffer.size    
   
   local advance = 0
   local lineNumber = 0
   local leading = -self.rasterizer:getLeading()
+  local count = 0
   
   local lastCodepoint = nil
   for _, codepoint in utf8.codes(text) do
@@ -121,11 +129,7 @@ function RobinText:draw(pass, text, wrap)
     
     local entry = self.characters[codepoint]
     if entry then
-      if not entry.skip then
-        pass:send('glyphIndex', entry.index)
-      end 
-      
-      local x, y, X, Y = unpack(entry.bounds)
+    
       if lastCodepoint then
         advance = advance + self.rasterizer:getKerning(lastCodepoint, codepoint)
       end      
@@ -133,22 +137,31 @@ function RobinText:draw(pass, text, wrap)
         advance = 0
         lineNumber = lineNumber + 1
       end
-      if not isWhitespace(codepoint) then
-        pass:plane(advance + (x+X)/2, lineNumber * leading + (y+Y)/2, 0, X - x, y - Y)
+      if not (isWhitespace(codepoint) or entry.skip) then
+        count = count + 1
+        self.instanceBuffer:pushback(advance, lineNumber * leading, entry.index)  
       end
-      advance = advance + entry.advance
-      
+      advance = advance + entry.advance      
       lastCodepoint = codepoint
     end
   end
+  
+  pass:setShader(robin.shader)
+  pass:setBlendMode('alpha')
+  pass:setDepthTest('none')
+  self.robinBuffer:sendBuffers(pass)
+  pass:send("instanceOffset", instanceOffset)
+  pass:send("GlyphInstances", self.instanceBuffer.buffer)
+  pass:draw(self.mesh, nil, count)
 end
   
 
-
 function lovr.draw(pass) 
+  robinText.instanceBuffer:clear()
+  
   lovr.graphics.setBackgroundColor(0.9, 0.9, 0.9)
   pass:push()
-  pass:setColor(0.1, 0.1, 0.1)
+  pass:setColor(0, 0, 0)
   
   local blockWidth = 16
   pass:translate(-blockWidth / 2, 1.7, -10)
@@ -174,10 +187,6 @@ function displayInfo(pass, text)
   local textSize = 1.0
   local lineSpacing = 0.04
     
-  local font = lovr.graphics.getDefaultFont()
-  font:setPixelDensity(1)
-  pass:setFont(font)
-  
   pass:setShader()
   pass:setViewPose(1, mat4():identity())
   pass:setProjection('orthographic')
@@ -192,10 +201,7 @@ function displayInfo(pass, text)
   for no, line in ipairs(text) do
     robinText:draw(pass, line)
     pass:translate(0, -lineSpacing * height, 0)
-    --pass:text(line, 2 * lineSpacing * width, no * lineSpacing * height, -1, textSize, 0, 0, 1, 0, nil, 'left', 'top')
   end
-  font:setPixelDensity()
-  
 end
 
 function lovr.load()

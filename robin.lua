@@ -449,6 +449,27 @@ robin.glyphFormat = {
   layout = "std430"
 }
 
+robin.instanceFormat = {
+  { 'position', 'vec2' },
+  { 'glyphIndex', 'int' },
+  layout = "std430"
+}
+
+local function longEnoughBuffer(buffer, format, requiredLength)
+  local currentLength = buffer:getLength()
+  if currentLength < requiredLength then
+    --local format = buffer:getFormat()
+    --format.stride = buffer:getStride()
+    
+    local newLength = math.max(currentLength * 2, requiredLength)    
+    local newBuffer = lovr.graphics.newBuffer(format, newLength)
+    
+    newBuffer:setData(buffer)
+    return newBuffer
+  end
+  return buffer
+end
+
 --- create a new instance
 function robin.new(o)
   o = setmetatable(o or {}, robin)
@@ -493,16 +514,7 @@ function robin:add(curve, bounds)
     }
   result.textureToCurve = composeTransform(result.uvToCurve, invertTransform(result.uvToTexture))
 
-  do -- ensure curve buffer has capacity
-    local requiredBufferSize = BYTES_PER_FLOAT * (self.curveBufferUsed + result.floatCount)
-    local currentBufferSize = self.curveBuffer:getSize()
-    if currentBufferSize < requiredBufferSize then
-      local newSize = math.max(currentBufferSize * 2, requiredBufferSize)
-      local newBuffer = lovr.graphics.newBuffer('f32', newSize / BYTES_PER_FLOAT)
-      newBuffer:setData(self.curveBuffer)
-      self.curveBuffer = newBuffer
-    end
-  end
+  self.curveBuffer = longEnoughBuffer(self.curveBuffer, 'f32', self.curveBufferUsed + result.floatCount)
   
   self.curveBuffer:setData(self.buffer, BYTES_PER_FLOAT * self.curveBufferUsed)
     
@@ -515,16 +527,7 @@ function robin:add(curve, bounds)
   self.nonContiguousSegmentCount = self.nonContiguousSegmentCount + result.nonContiguousSegmentCount
   self.segmentCount = self.segmentCount + result.segmentCount
   
-  do -- ensure that glyph buffer has capacity
-    local requiredLength = self.numEntries
-    local currentLength = self.glyphBuffer:getLength()
-    if currentLength < requiredLength then
-      local newLength = math.max(currentLength * 2, requiredLength)
-      local newBuffer = lovr.graphics.newBuffer(robin.glyphFormat, newLength)
-      newBuffer:setData(self.glyphBuffer)
-      self.glyphBuffer = newBuffer
-    end
-  end
+  self.glyphBuffer = longEnoughBuffer(self.glyphBuffer, robin.glyphFormat, self.numEntries)
     
   self.glyphBuffer:setData({result}, self.numEntries)    
   
@@ -598,6 +601,33 @@ function robin.loadShader()
   
   return "Shader load successful"
 end
+
+local Instances = {}
+Instances.__index = Instances
+
+function Instances.new(initialCapacity)
+  initialCapacity = initialCapacity or 128
+  
+  buffer = lovr.graphics.newBuffer(robin.instanceFormat, initialCapacity)
+  
+  return setmetatable({buffer = buffer, size = 0}, Instances)
+end
+
+function Instances:clear()
+  self.size = 0
+end
+
+function Instances:pushback(x, y, id)
+  self:resize(self.size + 1)
+  self.buffer:setData({{position = {x, y}, glyphIndex = id}}, self.size)
+end
+
+function Instances:resize(n)
+  self.buffer = longEnoughBuffer(self.buffer, robin.instanceFormat, n)
+  self.size = n
+end
+
+robin.InstanceBuffer = Instances
 
 return robin
 

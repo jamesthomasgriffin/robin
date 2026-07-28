@@ -491,6 +491,7 @@ function robin:add(curve, bounds)
     x * self.entryWidth / self.rasterWidth,
     y * self.entryHeight / self.rasterHeight
     }
+  result.textureToCurve = composeTransform(result.uvToCurve, invertTransform(result.uvToTexture))
 
   do -- ensure curve buffer has capacity
     local requiredBufferSize = BYTES_PER_FLOAT * (self.curveBufferUsed + result.floatCount)

@@ -99,8 +99,7 @@ function RobinText:addCharacter(codepoint)
   entry.bounds = {hm, vm, hM, vM}
   entry.advance = self.rasterizer:getAdvance(codepoint)
   
-  self.characters[codepoint] = entry
-  
+  self.characters[codepoint] = entry  
 end
 
 function RobinText:draw(pass, text, wrap)
@@ -123,10 +122,8 @@ function RobinText:draw(pass, text, wrap)
     local entry = self.characters[codepoint]
     if entry then
       if not entry.skip then
-        pass:send('uvToCurve', unpack(entry.uvToCurve))
-        pass:send('uvToTexture', unpack(entry.uvToTexture))
-        pass:send('glyphDataOffset', entry.dataOffset)
-      end
+        pass:send('glyphIndex', entry.index)
+      end 
       
       local x, y, X, Y = unpack(entry.bounds)
       if lastCodepoint then

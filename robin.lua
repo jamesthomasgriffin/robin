@@ -441,6 +441,14 @@ local robin = {
 }
 robin.__index = robin
 
+robin.glyphFormat = {
+  { 'uvToCurve', 'vec4' },
+  { 'uvToTexture', 'vec4' },
+  { 'textureToCurve', 'vec4' },
+  { 'dataOffset', 'int' },
+  layout = "std430"
+}
+
 --- create a new instance
 function robin.new(o)
   o = setmetatable(o or {}, robin)
@@ -448,8 +456,12 @@ function robin.new(o)
   o.curveBufferUsed = 0
   o.segmentCount = 0
   o.nonContiguousSegmentCount = 0
+  
   local initialCapacity = 20000  -- should hold a small-medium font
+  local initialGlyphCapacity = 128
   o.curveBuffer = lovr.graphics.newBuffer('f32', initialCapacity)
+  o.glyphBuffer = lovr.graphics.newBuffer(robin.glyphFormat, initialGlyphCapacity)
+  
   o.rasterBuffer = lovr.graphics.newTexture(o.rasterWidth, o.rasterHeight, {
     type = '2d',
     format = 'rg16',
@@ -469,24 +481,26 @@ function robin:add(curve, bounds)
   local y = math.floor(self.numEntries / W)
   self.raster = self.raster or lovr.data.newImage(self.entryWidth, self.entryHeight, 'rg16')
   self.buffer = self.buffer or lovr.data.newBlob(1000000)
-  
-  
+    
   local result = prepareCurve(curve, self.raster, self.buffer, bounds)
+  result.index = self.numEntries
   result.dataOffset = self.curveBufferUsed / 2
   result.uvToTexture = {
     self.entryWidth / self.rasterWidth, 
     self.entryHeight / self.rasterHeight, 
     x * self.entryWidth / self.rasterWidth,
     y * self.entryHeight / self.rasterHeight
-    }   
+    }
 
-  local requiredBufferSize = BYTES_PER_FLOAT * (self.curveBufferUsed + result.floatCount)
-  local currentBufferSize = self.curveBuffer:getSize()
-  if currentBufferSize < requiredBufferSize then
-    local newSize = math.max(currentBufferSize * 2, requiredBufferSize)
-    local newBuffer = lovr.graphics.newBuffer('f32', newSize / BYTES_PER_FLOAT)
-    newBuffer:setData(self.curveBuffer)
-    self.curveBuffer = newBuffer
+  do -- ensure curve buffer has capacity
+    local requiredBufferSize = BYTES_PER_FLOAT * (self.curveBufferUsed + result.floatCount)
+    local currentBufferSize = self.curveBuffer:getSize()
+    if currentBufferSize < requiredBufferSize then
+      local newSize = math.max(currentBufferSize * 2, requiredBufferSize)
+      local newBuffer = lovr.graphics.newBuffer('f32', newSize / BYTES_PER_FLOAT)
+      newBuffer:setData(self.curveBuffer)
+      self.curveBuffer = newBuffer
+    end
   end
   
   self.curveBuffer:setData(self.buffer, BYTES_PER_FLOAT * self.curveBufferUsed)
@@ -499,6 +513,19 @@ function robin:add(curve, bounds)
   
   self.nonContiguousSegmentCount = self.nonContiguousSegmentCount + result.nonContiguousSegmentCount
   self.segmentCount = self.segmentCount + result.segmentCount
+  
+  do -- ensure that glyph buffer has capacity
+    local requiredLength = self.numEntries
+    local currentLength = self.glyphBuffer:getLength()
+    if currentLength < requiredLength then
+      local newLength = math.max(currentLength * 2, requiredLength)
+      local newBuffer = lovr.graphics.newBuffer(robin.glyphFormat, newLength)
+      newBuffer:setData(self.glyphBuffer)
+      self.glyphBuffer = newBuffer
+    end
+  end
+    
+  self.glyphBuffer:setData({result}, self.numEntries)    
   
   return result
 end
@@ -518,6 +545,7 @@ end
 function robin:sendBuffers(pass)
   pass:send('rasterData', self.rasterBuffer)
   pass:send('CurveData', self.curveBuffer)
+  pass:send('GlyphData', self.glyphBuffer)
 end
 
 function robin:getRasterMemoryUse()

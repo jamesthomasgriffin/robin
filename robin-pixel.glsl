@@ -3,13 +3,13 @@
 
 /******* Input data *******/
 
-struct RobinPerGlyph {
+struct RobinGlyph {
     vec4 uvToCurve;
     vec4 uvToTexture;
     vec4 textureToCurve;
     int dataOffset;
 };
-flat in RobinPerGlyph glyph;
+flat in RobinGlyph glyph;
 
 vec2 applyTransform(vec4 T, vec2 p) { return p * T.xy + T.zw; }
 vec2 applyInverseTransform(vec4 T, vec2 p) { return (p - T.zw) / T.xy; }
@@ -138,7 +138,7 @@ vec3 crossingNumberOfBezier(vec2 p1, vec2 p2, vec2 p3, float lineY, vec2 q)
     return vec3(change, proximityX, proximityY);
 }
 
-float robinRender(RobinPerGlyph g, vec2 uv)
+float robinRender(RobinGlyph g, vec2 uv)
 {  
     const vec2 curveCoord = applyTransform(g.uvToCurve, uv);
     
@@ -179,7 +179,7 @@ float robinRender(RobinPerGlyph g, vec2 uv)
     
     // Turns the winding number of "proximities" into an anti-aliased value
 	const vec2 emsPerPixel = fwidth(curveCoord);
-	const vec2 pixelsPerEm = 1.2 / emsPerPixel;
+	const vec2 pixelsPerEm = 1.2 / emsPerPixel; 
     const float proximity = closestProximity(proximityX * pixelsPerEm.x, -proximityY * pixelsPerEm.y);
     if (windingNumber==0) 
         return max(0.5 - 0.5 * abs(proximity), 0.0);

@@ -102,7 +102,8 @@ function RobinText:addCharacter(codepoint)
 end
 
 function RobinText:draw(pass, text, wrap)
-
+  pass:push()
+  pass:scale(1.0 / self.font:getPixelDensity())
   local instanceOffset = self.instanceBuffer.size    
   
   local leading = -self.rasterizer:getLeading()
@@ -140,6 +141,7 @@ function RobinText:draw(pass, text, wrap)
   pass:send("instanceOffset", instanceOffset)
   pass:send("GlyphInstances", self.instanceBuffer.buffer)
   pass:draw(self.mesh, nil, count)
+  pass:pop()
 end
   
 
@@ -152,7 +154,6 @@ function lovr.draw(pass)
   
   local blockWidth = 16
   pass:translate(-blockWidth / 2, 1.7, -10)
-  pass:scale(1/32)
   
   robinText:draw(pass, robinText.sample, blockWidth)
   pass:pop()
@@ -171,9 +172,9 @@ end
 
 function displayInfo(pass, text)
 
-  local textSize = 1.0
+  local textSize = 0.8
   local lineSpacing = 0.04
-    
+  pass:push()
   pass:setShader()
   pass:setViewPose(1, mat4():identity())
   pass:setProjection('orthographic')
@@ -185,10 +186,15 @@ function displayInfo(pass, text)
   pass:scale(textSize, -textSize, 1)
   pass:translate(1.5 * lineSpacing * width, -1.5 * lineSpacing * height, 0)
   pass:setColor(0x332211)
+  local savedPD = robinText.font:getPixelDensity()
+  robinText.font:setPixelDensity(1)
+  --pass:scale(32, 32)
   for no, line in ipairs(text) do
     robinText:draw(pass, line)
-    pass:translate(0, -lineSpacing * height, 0)
+    pass:translate(0, -1 * lineSpacing * height, 0)
   end
+  pass:pop()
+  robinText.font:setPixelDensity(savedPD)
 end
 
 local function setActiveFont(k, entryWidth, entryHeight)
@@ -224,9 +230,10 @@ end
 
 function lovr.keypressed(key, scancode, isrepeat)
   local entryWidth, entryHeight = robinText.robinBuffer.entryWidth, robinText.robinBuffer.entryHeight
+  
+  local originalFontIndex = robinText.fontIndex
   local originalW, originalH = entryWidth, entryHeight
   
-  local file = robinText.file
   local shift = lovr.system.isKeyDown("lshift", "rshift")
   
   if key == "=" then
@@ -243,10 +250,11 @@ function lovr.keypressed(key, scancode, isrepeat)
     end
   end
 
-  local k = tonumber(key)
+  local fontIndex = tonumber(key) or originalFontIndex
+  
   if originalW ~= entryWidth or originalH ~= entryHeight 
-    or (k and robinText.fontIndex ~= k) then
-      setActiveFont(k, entryWidth, entryHeight)
+    or originalFontIndex ~= fontIndex then
+      setActiveFont(fontIndex, entryWidth, entryHeight)
   end
 end
 

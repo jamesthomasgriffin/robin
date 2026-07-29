@@ -61,7 +61,7 @@ end
 local RobinText = {}
 RobinText.__index = RobinText
 
-function RobinText.new(fontPath, entryWidth, entryHeight)
+function RobinText.new(font, entryWidth, entryHeight)
   if not robin.shader then
     print(robin.loadShader())
   end
@@ -70,7 +70,9 @@ function RobinText.new(fontPath, entryWidth, entryHeight)
   
   
   local o = setmetatable({}, RobinText)
-  o.rasterizer = lovr.data.newRasterizer(fontPath)
+  o.font = font or lovr.graphics.getDefaultFont()
+  
+  o.rasterizer = o.font:getRasterizer()
   
   local rasterW, rasterH = robin.necessaryDimensions(entryWidth, entryHeight, o.rasterizer:getGlyphCount())
   
@@ -204,6 +206,12 @@ function displayInfo(pass, text)
   end
 end
 
+local function setActiveFont(k, entryWidth, entryHeight)
+  local font = loadedFonts[k] or loadedFonts.default
+  robinText = RobinText.new(font, entryWidth, entryHeight)
+  robinText.fontIndex = font and k or 0
+end
+
 function lovr.load()
     
   lovr.filesystem.watch()
@@ -211,16 +219,22 @@ function lovr.load()
     
   hudPass = lovr.graphics.newPass()
   
-  fontFiles = {}
+  loadedFonts = {}
+  loadedFonts.default = lovr.graphics.getDefaultFont() 
   for _, filename in ipairs(lovr.filesystem.getDirectoryItems("fonts/")) do
     if string.match(filename, "%.[tT][tT][fF]$") then
-      table.insert(fontFiles, "fonts/" .. filename)
-      print(fontFiles[#fontFiles])
+      local path = "fonts/" .. filename
+      local font = lovr.graphics.newFont(path)
+      if font then
+        table.insert(loadedFonts, font)
+        print("Loaded ", path)
+      else
+        print("Failed to load ", path)
+      end
     end
   end
   
-  robinText = RobinText.new(fontFiles[1], entryWidth, entryHeight)
-  robinText.file = fontFiles[1]
+  setActiveFont(1)
 end
 
 function lovr.keypressed(key, scancode, isrepeat)
@@ -244,15 +258,10 @@ function lovr.keypressed(key, scancode, isrepeat)
     end
   end
 
-  key = tonumber(key)
-  if key and not isrepeat then
-    file = fontFiles[key] -- nil is valid, it's the default font
-  end
-  
+  local k = tonumber(key)
   if originalW ~= entryWidth or originalH ~= entryHeight 
-    or robinText.file ~= file then
-    robinText = RobinText.new(file, entryWidth, entryHeight)
-    robinText.file = file
+    or robinText.fontIndex ~= k then
+      setActiveFont(k, entryWidth, entryHeight)
   end
 end
 

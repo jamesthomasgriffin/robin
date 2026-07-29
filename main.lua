@@ -42,22 +42,7 @@ local function isWhitespace(cp)
   return lookup[cp] or false
 end
 
-local function isNewline(cp)
-  local lookup = {
-      -- ASCII whitespace
-      [10]  = true, -- Line Feed (\n)
-      [11]  = true, -- Vertical Tab (\v)
-      [12]  = true, -- Form Feed (\f)
-      [13]  = true, -- Carriage Return (\r)
-
-      -- Unicode
-      [0x2028] = true, -- Line separator
-      [0x2029] = true, -- Paragraph separator
-  }
-  return lookup[cp] or false
-end
-
--- A very rough proof of concept
+-- A rough proof of concept
 local RobinText = {}
 RobinText.__index = RobinText
 
@@ -120,31 +105,31 @@ function RobinText:draw(pass, text, wrap)
 
   local instanceOffset = self.instanceBuffer.size    
   
-  local advance = 0
-  local lineNumber = 0
   local leading = -self.rasterizer:getLeading()
   local count = 0
   
-  local lastCodepoint = nil
-  for _, codepoint in utf8.codes(text) do
-    self:addCharacter(codepoint)
-    
-    local entry = self.characters[codepoint]
-    if entry then
-    
-      if lastCodepoint then
-        advance = advance + self.rasterizer:getKerning(lastCodepoint, codepoint)
-      end      
-      if isNewline(codepoint) or (wrap and advance + entry.advance > wrap) then
-        advance = 0
-        lineNumber = lineNumber + 1
+  local lines = self.font:getLines(text, wrap or 1e6)
+  for lineIndex, line in ipairs(lines) do
+    local lastCodepoint = nil
+    local advance = 0
+    for _, codepoint in utf8.codes(line) do
+      self:addCharacter(codepoint)
+      
+      local entry = self.characters[codepoint]
+      if entry then
+      
+        if lastCodepoint then
+          advance = advance + self.rasterizer:getKerning(lastCodepoint, codepoint)
+        end
+        
+        if not (isWhitespace(codepoint) or entry.skip) then
+          count = count + 1
+          self.instanceBuffer:pushback(advance, (lineIndex - 1) * leading, entry.index)  
+        end
+        
+        advance = advance + entry.advance      
+        lastCodepoint = codepoint
       end
-      if not (isWhitespace(codepoint) or entry.skip) then
-        count = count + 1
-        self.instanceBuffer:pushback(advance, lineNumber * leading, entry.index)  
-      end
-      advance = advance + entry.advance      
-      lastCodepoint = codepoint
     end
   end
   
@@ -169,7 +154,7 @@ function lovr.draw(pass)
   pass:translate(-blockWidth / 2, 1.7, -10)
   pass:scale(1/32)
   
-  robinText:draw(pass, robinText.sample, blockWidth * 32)
+  robinText:draw(pass, robinText.sample, blockWidth)
   pass:pop()
   
   local stats = pass:getStats()
@@ -260,7 +245,7 @@ function lovr.keypressed(key, scancode, isrepeat)
 
   local k = tonumber(key)
   if originalW ~= entryWidth or originalH ~= entryHeight 
-    or robinText.fontIndex ~= k then
+    or (k and robinText.fontIndex ~= k) then
       setActiveFont(k, entryWidth, entryHeight)
   end
 end

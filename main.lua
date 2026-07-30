@@ -165,7 +165,7 @@ function lovr.draw(pass)
     string.format("Entry size: %d x %d", robinText.robinBuffer.entryWidth, robinText.robinBuffer.entryHeight),
     string.format("Memory Factor: %.2f", robinText.robinBuffer:getMemoryEfficiency())
   }
-  displayInfo(pass, text)
+  displayInfo(pass, table.concat(text, '\n'))
 end
 
 function displayInfo(pass, text)
@@ -189,7 +189,13 @@ function displayInfo(pass, text)
   local savedPD = robinText.font:getPixelDensity()
   robinText.font:setPixelDensity(1)
   
-  robinText:draw(pass, table.concat(text, '\n'))
+  if modes.selected == modes.msdf then
+    pass:scale(1, -1)
+    pass:text(text, 0, 0, 0, 1, 0, 0, 0, 1, 1e16, "left", "top")
+  else
+    robinText:draw(pass, text)
+  end
+  
   pass:pop()
   robinText.font:setPixelDensity(savedPD)
 end

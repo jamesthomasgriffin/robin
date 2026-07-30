@@ -1,5 +1,10 @@
 # Raster of Bezier Intersection Neighbourhoods (ROBIN)
 
+<figure>
+<img width="1444" height="322" alt="comparison" src="https://github.com/user-attachments/assets/8ed4050d-0222-4148-b640-2703154c93dd" />
+<figcaption align="center"><table><tr><td width="722"><i>Left is rendered using Robin. </i></td><td width="722"><i>Right is rendered using a 64x64 MSDF.</i></td></tr></table></figcaption>
+</figure>
+
 An algorithm for rendering text or other vector graphics, inspired by and directly comparable to [SLUG](https://github.com/EricLengyel/Slug).  The vector data is held in two objects on the GPU: 
 1) the raster where each pixel contains a partial winding number (8 bits), the number of Bezier curves intersecting that pixel (8 bits), and the index of the first Bezier curve (16 bits), along with
 2) the buffer of floats containing the Bezier curves indexed by the raster.

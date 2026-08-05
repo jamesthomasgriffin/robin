@@ -1,16 +1,28 @@
-# Raster of Bezier Intersection Neighbourhoods (ROBIN)
+# Raster of Bézier Intersection Neighbourhoods (ROBIN)
 
-An algorithm for rendering text or other vector graphics, inspired by and directly comparable to [SLUG](https://github.com/EricLengyel/Slug).  The vector data is held in two objects on the GPU: 
-1) the raster where each pixel contains a partial winding number (8 bits), the number of Bezier curves intersecting that pixel (8 bits), and the index of the first Bezier curve (16 bits), along with
-2) the buffer of floats containing the Bezier curves indexed by the raster.
+<figure>
+<img width="1444" height="322" alt="comparison" src="https://github.com/user-attachments/assets/8ed4050d-0222-4148-b640-2703154c93dd" />
+<figcaption align="center"><table><tr><td width="722"><i>Left is rendered using Robin. </i></td><td width="722"><i>Right is rendered using 64x64 MSDFs.</i></td></tr></table></figcaption>
+</figure>
+
+An algorithm for rendering text or other vector graphics, inspired by and directly comparable to [SLUG](https://github.com/EricLengyel/Slug).
+Like SLUG, the algorithm performs an exact calculation of the winding number around a point for a given list of quadratic Béziers.  
+Unlike SLUG the algorithm caches a partial calculation of the winding number leaving fewer Bézier curves to process for each pixel.
+This approach leads to the high quality and low memory requirements of SLUG but with faster render times and most importantly, render times that do not scale with the number of Bézier curves.
+
+## The implementation
+
+The vector data is held in two objects on the GPU: 
+1) the eponymous raster where each pixel contains a partial winding number (8 bits), the number of Bézier curves intersecting that pixel (8 bits), and the index of the first Bézier curve (16 bits), along with
+2) the buffer of floats containing the Bézier curves indexed by the raster.
+
   
-## This implementation
 This repository contains a [LÖVR](https://github.com/bjornbytes/lovr) project.  The code is split between glsl for rendering and Lua for the creation of the ROBIN raster and curve data.  At this stage the code is not pretty, but hopefully the text rendering is.  Suggestions for improvements are welcome.
 To run the demo just [download LÖVR](https://lovr.org/downloads), extract it, then drag the folder containing this project onto the LÖVR executable.
 Optionally download some fonts from e.g. [Google Fonts](https://fonts.google.com/) and copy them into the fonts folder, use number keys to switch between them.
 
 ## Notes on the algorithm
-ROBIN is nearly equivalent to SLUG if the raster is a `1xn` line.  The input is a sequence of quadratic Bezier curves, these curves are binned into a raster, each texel references the curves which pass through it and contains a partial calculation of the winding number for the curves which do *not* pass through it.  This means that only those curves in the neighbourhood of a point need to be intersected when computing the winding number.
+ROBIN is nearly equivalent to SLUG if the raster is a `1xn` line.  The input is a sequence of quadratic Bézier curves, these curves are binned into a raster, each texel references the curves which pass through it and contains a partial calculation of the winding number for the curves which do *not* pass through it.  This means that only those curves in the neighbourhood of a point need to be intersected when computing the winding number.
 
 Although I don't make any strong claims of speed I found this method to be about `1.5x` to `2x` as fast as SLUG which bins its curves into bands, this is for simple fonts with double digit numbers of curves.  The main advantage of ROBIN is that it scales with the number of curves in a texel neighbourhood as opposed to the number of curves that intersect a line passing through the whole glyph.  As such ROBIN sees no slow down for intricate fonts at the expense of a larger raster.  Because ROBIN is inherently more efficient than SLUG this also means that the implementation requires fewer optimisations meaning that it is actually simpler.
 

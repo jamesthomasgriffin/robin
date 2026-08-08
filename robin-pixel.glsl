@@ -154,8 +154,7 @@ struct RobinPerTexelData {
 RobinPerTexelData robinRasterLookup(RobinGlyph g, vec2 uv)
 {
     RobinPerTexelData result;
-    // NB, these calculations need to be in the pixel shader,
-    // the interpolation leads to artifacts otherwise
+    // clamping needs to be in the pixel shader, due to interpolation artifacts
     const vec2 clampedUV = clamp(uv, vec2(0), vec2(0.999));
     
     const ivec2 gridCoord = ivec2(textureSize(rasterData, 0) * applyTransform(g.uvToTexture, clampedUV));  

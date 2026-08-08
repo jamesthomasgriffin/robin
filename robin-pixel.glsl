@@ -12,7 +12,6 @@ struct RobinGlyph {
 flat in RobinGlyph glyph;
 
 vec2 applyTransform(vec4 T, vec2 p) { return p * T.xy + T.zw; }
-vec2 applyInverseTransform(vec4 T, vec2 p) { return (p - T.zw) / T.xy; }
 
 // The Béziers are triples of vec2's within this buffer
 readonly buffer CurveData {
@@ -25,14 +24,21 @@ readonly buffer CurveData {
 // or not (which determines the stride).
 uniform sampler2D rasterData;
 
-/******* Bernstein quadratic solving *******/
+/******* Quadratic Equations *******/
 
+// The Bernstein quadratic equation (1-t)^2 y2 + 2t(1-t) y2 + t^2 y3 = y
+// has two possible roots, this function determines whether to count them or
+// not.
+//
+// N.B. In the case that there is no (real) root BOTH roots are returned, but
+// they'll cancel out later.
 uint rootEligibility(float y1, float y2, float y3, float y)
 {
     uint shift = uint(y > y1) | uint(y > y2) << 1 | uint(y > y3) << 2;
 
     // This lookup table is taken from the slug algorithm
-	// Eligibility is returned in bits 0 and 8.
+	// Eligibility of the positive parity root is returned in bit 0.
+	// ------------------ negative ----------------------- in bit 8.
 	return ((0x2E74U >> shift) & 0x0101U);
 }
 
@@ -48,7 +54,7 @@ struct QuadraticRoots {
 
 QuadraticRoots solveQuadratic(float a, float b, float c)
 {
-    QuadraticRoots res;   
+    QuadraticRoots res;
     
 	// If nearly linear, then solve bt + c = 0.
 	if (abs(a) < 1.0 / 65536.0) {
@@ -62,8 +68,7 @@ QuadraticRoots solveQuadratic(float a, float b, float c)
     return res;
 }
 
-
-/******* Crossing number of a quadratic Bézier *******/
+/******* L-Crossing number of a quadratic Bézier *******/
 
 // This can be moved into the calling function, but care is needed, the a==b
 // case is very important to get correct.
@@ -84,7 +89,7 @@ float closestProximity(float a, float b) {
 // sign of the crossing number change at the closest points.
 vec3 crossingNumberOfBezier(vec2 p1, vec2 p2, vec2 p3, float lineY, vec2 q)
 {
-    float change = 0.0;
+    float result = 0.0;
     float proximityX = 3.4e+38;
     float proximityY = 3.4e+38;
         
@@ -93,8 +98,8 @@ vec3 crossingNumberOfBezier(vec2 p1, vec2 p2, vec2 p3, float lineY, vec2 q)
     const vec2 c = p1;
     
     // 1(q.x > p1.x) * 1(p1.y > lineY) - 1(q.x > p3.x) * 1(lineY > p3.y)
-    change += my_step(q.x, p1.x) * my_step(lineY, p1.y);
-    change -= my_step(q.x, p3.x) * my_step(lineY, p3.y);
+    result += my_step(q.x, p1.x) * my_step(lineY, p1.y);
+    result -= my_step(q.x, p3.x) * my_step(lineY, p3.y);
     
     const uint vCode = rootEligibility(p1.x, p2.x, p3.x, q.x);
     if (vCode != 0U)
@@ -104,14 +109,14 @@ vec3 crossingNumberOfBezier(vec2 p1, vec2 p2, vec2 p3, float lineY, vec2 q)
         
 		if ((vCode & 1U) != 0U)
 		{
-			change += my_step(q.y, y.r);
+			result += my_step(q.y, y.r);
             if (!res.doubleRoot) 
                 proximityY = closestProximity(proximityY, q.y - y.r);
 		}
 
 		if (vCode > 1U)
 		{
-			change -= my_step(q.y, y.g);
+			result -= my_step(q.y, y.g);
             if (!res.doubleRoot) 
                 proximityY = closestProximity(proximityY, -(q.y - y.g));
 		}
@@ -135,50 +140,42 @@ vec3 crossingNumberOfBezier(vec2 p1, vec2 p2, vec2 p3, float lineY, vec2 q)
             }
         }
     }    
-    return vec3(change, proximityX, proximityY);
+    return vec3(result, proximityX, proximityY);
 }
 
-float robinRender(RobinGlyph g, vec2 uv)
-{  
-    const vec2 curveCoord = applyTransform(g.uvToCurve, uv);
-    
+struct RobinPerTexelData {
+    int partialWindingNumber;
+    int curveCount;
+    int curveInitialIndex;
+    int curveIndexStride;
+    float lCrossingAxis;
+};
+
+RobinPerTexelData robinRasterLookup(RobinGlyph g, vec2 uv)
+{
+    RobinPerTexelData result;
     // NB, these calculations need to be in the pixel shader,
     // the interpolation leads to artifacts otherwise
     const vec2 clampedUV = clamp(uv, vec2(0), vec2(0.999));
-    const vec2 tex = applyTransform(g.uvToTexture, clampedUV);
     
-    const ivec2 gridCoord = ivec2(textureSize(rasterData, 0) * tex);    
+    const ivec2 gridCoord = ivec2(textureSize(rasterData, 0) * applyTransform(g.uvToTexture, clampedUV));  
+    
     const vec2 cornerOfSquare = applyTransform(g.textureToCurve, 
             vec2(gridCoord) / textureSize(rasterData, 0));
             
     const uvec2 gridData = uvec2(round(texelFetch(rasterData, gridCoord, 0).rg * 65535.0));
     
-    const int partialWindingNumber = int(gridData.r >> 8) - 128;  
-    const int numSegments = int(gridData.r & 255);
-    
-    const int startingIndex = g.dataOffset + int(gridData.g >> 1);
-    const int indexStride = ((gridData.g & 1u) == 1u) ? 3 : 2;
-    
-	float windingNumber = partialWindingNumber;        
-    float proximityX = 1.0e30;
-    float proximityY = 1.0e30;
-	for (int i = 0; i < numSegments; i++)
-	{
-		const int curveIndex = startingIndex + indexStride * i;
-        
-		const vec2 p1 = curveData[curveIndex + 0];
-		const vec2 p2 = curveData[curveIndex + 1];
-		const vec2 p3 = curveData[curveIndex + 2];
-        
-        const vec3 cnb = crossingNumberOfBezier(p1, p2, p3, cornerOfSquare.y, curveCoord);
-        
-        windingNumber += cnb.x;
-        proximityX = closestProximity(proximityX, cnb.y);
-        proximityY = closestProximity(proximityY, cnb.z);
-	}
-    
-    // Turns the winding number of "proximities" into an anti-aliased value
-	const vec2 emsPerPixel = fwidth(curveCoord);
+    result.partialWindingNumber = int(gridData.r >> 8) - 128;  
+    result.curveCount = int(gridData.r & 255);    
+    result.curveInitialIndex = g.dataOffset + int(gridData.g >> 1);
+    result.curveIndexStride = ((gridData.g & 1u) == 1u) ? 3 : 2;            
+    result.lCrossingAxis = cornerOfSquare.y;
+
+    return result;
+}
+
+float getAntiAliasedValue(float windingNumber, float proximityX, float proximityY, vec2 emsPerPixel)
+{
 	const vec2 pixelsPerEm = 1.2 / emsPerPixel; 
     const float proximity = closestProximity(proximityX * pixelsPerEm.x, -proximityY * pixelsPerEm.y);
     if (windingNumber==0) 
@@ -188,6 +185,32 @@ float robinRender(RobinGlyph g, vec2 uv)
     else if (windingNumber == -1)
         return (proximity < 0) ? 1.0 : min(0.5 + proximity, 1.0);
     return 1.0; 
+}
+
+float robinRender(RobinGlyph g, vec2 uv)
+{  
+    const vec2 curveCoord = applyTransform(g.uvToCurve, uv);
+    const RobinPerTexelData texel = robinRasterLookup(g, uv);
+    
+	float windingNumber = texel.partialWindingNumber;        
+    float proximityX = 1.0e30;
+    float proximityY = 1.0e30;
+    int segmentIndex = texel.curveInitialIndex;
+	for (int i = 0; i < texel.curveCount; i++)
+	{
+		const vec2 p1 = curveData[segmentIndex + 0];
+		const vec2 p2 = curveData[segmentIndex + 1];
+		const vec2 p3 = curveData[segmentIndex + 2];
+        
+        const vec3 cnb = crossingNumberOfBezier(p1, p2, p3, texel.lCrossingAxis, curveCoord);
+        
+        windingNumber += cnb.x;
+        proximityX = closestProximity(proximityX, cnb.y);
+        proximityY = closestProximity(proximityY, cnb.z);
+        
+        segmentIndex += texel.curveIndexStride;
+	}
+    return getAntiAliasedValue(windingNumber, proximityX, proximityY, fwidth(curveCoord));
 }
 
 vec4 lovrmain()
